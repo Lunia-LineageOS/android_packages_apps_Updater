@@ -26,10 +26,14 @@ data class UpdateItemState(
 )
 
 sealed interface ProgressState {
+    val isSuspended: Boolean
+        get() = false
+
     data class Determinate(
         val percent: Float,
         val downloadedSize: String,
         val eta: String,
+        override val isSuspended: Boolean = false,
     ) : ProgressState
 
     data object Indeterminate : ProgressState

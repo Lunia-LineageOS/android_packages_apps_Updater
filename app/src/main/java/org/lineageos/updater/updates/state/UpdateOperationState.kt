@@ -63,6 +63,9 @@ data class UpdateOperationState(
     val isFinalizing: Boolean
         get() = phase == UpdateOperationPhase.FINALIZING
 
+    val isInstallationSuspended: Boolean
+        get() = phase == UpdateOperationPhase.INSTALLATION_SUSPENDED
+
     val requiresManualInstall: Boolean
         get() = installBlockedReason == InstallUtils.BlockedReason.VERSION_UNSUPPORTED
 

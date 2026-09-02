@@ -57,6 +57,7 @@ class UpdateItemStateMapper(
                 percent = update.installProgress.toFloat(),
                 downloadedSize = "",
                 eta = "",
+                isSuspended = state.isInstallationSuspended,
             )
 
             else -> null

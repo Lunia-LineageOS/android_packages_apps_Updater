@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -294,6 +295,16 @@ private fun ColumnScope.UpdateProgress(progress: ProgressState) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 32.dp),
+                amplitude = if (progress.isSuspended) {
+                    { 0f }
+                } else {
+                    WavyProgressIndicatorDefaults.indicatorAmplitude
+                },
+                waveSpeed = if (progress.isSuspended) {
+                    0.dp
+                } else {
+                    WavyProgressIndicatorDefaults.LinearDeterminateWavelength
+                },
             )
             val caption = listOf(progress.downloadedSize, progress.eta)
                 .filter { it.isNotEmpty() }
