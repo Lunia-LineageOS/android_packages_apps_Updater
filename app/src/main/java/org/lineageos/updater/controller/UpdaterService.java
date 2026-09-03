@@ -214,9 +214,12 @@ public class UpdaterService extends Service {
                 }
             } catch (IOException | ServiceSpecificException e) {
                 Log.e(TAG, "Could not install update", e);
-                mUpdaterController.setUpdate(downloadId, mUpdaterController.getUpdate(downloadId)
-                        .withStatus(UpdateStatus.INSTALLATION_FAILED));
-                mUpdaterController.notifyUpdateChange(downloadId);
+                if (!mUpdaterController.fallbackIncrementalToFull(downloadId)) {
+                    mUpdaterController.setUpdate(downloadId,
+                            mUpdaterController.getUpdate(downloadId)
+                                    .withStatus(UpdateStatus.INSTALLATION_FAILED));
+                    mUpdaterController.notifyUpdateChange(downloadId);
+                }
             }
         } else if (ACTION_INSTALL_STOP.equals(intent.getAction())) {
             if (UpdateInstaller.isInstalling()) {

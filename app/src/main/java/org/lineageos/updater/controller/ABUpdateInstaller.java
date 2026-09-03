@@ -107,6 +107,9 @@ class ABUpdateInstaller {
         public void onPayloadApplicationComplete(int errorCode) {
             if (errorCode != UpdateEngine.ErrorCodeConstants.SUCCESS) {
                 installationDone(false);
+                if (mUpdaterController.fallbackIncrementalToFull(mDownloadId)) {
+                    return;
+                }
                 Update update = mUpdaterController.getUpdate(mDownloadId);
                 mUpdaterController.setUpdate(mDownloadId, update.toBuilder()
                         .setInstallProgress(0)
