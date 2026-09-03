@@ -5,23 +5,30 @@
 
 package org.lineageos.updater.data
 
+import android.content.Context
 import android.util.Log
+import androidx.preference.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import org.lineageos.updater.data.source.local.UpdatesLocalDataSource
+import org.lineageos.updater.data.source.network.NetworkUpdate
 import org.lineageos.updater.data.source.network.UpdatesNetworkDataSource
+import org.lineageos.updater.data.source.network.toIncrementalUpdate
 import org.lineageos.updater.data.source.network.toUpdate
 import org.lineageos.updater.deviceinfo.DeviceInfoUtils
+import org.lineageos.updater.misc.Constants
 import org.lineageos.updater.notifications.NotificationHelper
 import org.lineageos.updater.util.NetworkMonitor
 import org.lineageos.updater.util.SystemUpdateInfoPublisher
+import org.json.JSONObject
 import java.io.IOException
 
 private const val TAG = "UpdatesRepository"
 
 class UpdatesRepository(
+    private val context: Context,
     private val networkMonitor: NetworkMonitor,
     private val notificationHelper: NotificationHelper,
     private val networkDataSource: UpdatesNetworkDataSource,
@@ -48,7 +55,7 @@ class UpdatesRepository(
 
         withContext(Dispatchers.IO) {
             localUpdates.values.filter {
-                it.downloadId != Update.LOCAL_ID && !filterUpdates(it)
+                it.downloadId != Update.LOCAL_ID && !filterUpdates(it, emptySet())
             }.forEach {
                 it.file?.delete()
                 localDataSource.removeUpdate(it.downloadId)
@@ -56,7 +63,11 @@ class UpdatesRepository(
         }
 
         val networkUpdates = withContext(Dispatchers.IO) {
-            networkDataSource.fetchUpdates().map { it.toUpdate() }.filter { filterUpdates(it) }
+            val network = networkDataSource.fetchUpdates()
+            persistIncrementalLinks(network)
+            val deltaUrls = network.mapNotNull { it.incremental?.firstOrNull()?.url }.toSet()
+            network.flatMap { listOfNotNull(it.toUpdate(), it.toIncrementalUpdate()) }
+                .filter { filterUpdates(it, deltaUrls) }
         }
 
         if (networkUpdates.isEmpty()) {
@@ -97,12 +108,28 @@ class UpdatesRepository(
         return System.currentTimeMillis()
     }
 
-    private fun filterUpdates(update: Update): Boolean {
+    private fun persistIncrementalLinks(network: List<NetworkUpdate>) {
+        val links = JSONObject()
+        network.forEach { update ->
+            update.incremental?.firstOrNull()?.let { delta ->
+                links.put(update.files[0].sha256, delta.url)
+            }
+        }
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+            .putString(Constants.PREF_INCREMENTAL_LINKS, links.toString()).apply()
+    }
+
+    private fun filterUpdates(update: Update, deltaUrls: Set<String>): Boolean {
         val isCurrentBuild = update.timestamp == DeviceInfoUtils.buildDateTimestamp
         val isOlderBuild = update.timestamp < DeviceInfoUtils.buildDateTimestamp
 
         if (!DeviceInfoUtils.isDowngradingAllowed && (isOlderBuild || isCurrentBuild)) {
             Log.d(TAG, "${update.name} is not newer than the current build")
+            return false
+        }
+
+        if (update.downloadUrl in deltaUrls && !DeviceInfoUtils.isABDevice) {
+            Log.d(TAG, "${update.name} is incremental but this device is not A/B")
             return false
         }
 

@@ -176,7 +176,10 @@ private fun UpdatesScaffoldContent(
     val isBusy = isChecking || isPreparing
     val isIdleAndEmpty = updateItems.isEmpty() && !isBusy
 
-    val activeItem = updateItems.firstOrNull { it.progress != null } ?: updateItems.firstOrNull()
+    val activeItem = updateItems.firstOrNull { it.progress != null }
+        ?: updaterController?.getDisplayUpdateId()?.let { id ->
+            updateItems.firstOrNull { it.downloadId == id }
+        } ?: updateItems.firstOrNull()
 
     SystemUpdateScreen(
         headline = getHeadline(

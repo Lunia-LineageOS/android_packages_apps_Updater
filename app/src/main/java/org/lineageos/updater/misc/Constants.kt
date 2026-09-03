@@ -17,6 +17,7 @@ object Constants {
     const val PREF_INSTALL_PACKAGE_PATH = "install_package_path"
     const val PREF_LAST_UPDATE_CHECK = "last_update_check"
     const val PREF_NEEDS_REBOOT_ID = "needs_reboot_id"
+    const val PREF_INCREMENTAL_LINKS = "incremental_links"
 
     /**
      * Miscellaneous

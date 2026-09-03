@@ -42,6 +42,7 @@ class UpdaterApplication : Application() {
     }
     val updatesRepository by lazy {
         UpdatesRepository(
+            context = applicationContext,
             networkMonitor = networkMonitor,
             notificationHelper = notificationHelper,
             networkDataSource = networkDataSource,

@@ -11,6 +11,8 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 
+import androidx.preference.PreferenceManager;
+
 import org.lineageos.updater.UpdaterApplication;
 import org.lineageos.updater.data.Update;
 import org.lineageos.updater.data.UpdateStatus;
@@ -18,6 +20,7 @@ import org.lineageos.updater.data.UserPreferencesRepository;
 import org.lineageos.updater.data.source.local.UpdatesLocalDataSource;
 import org.lineageos.updater.data.source.local.UpdatesDatabase;
 import org.lineageos.updater.download.DownloadClient;
+import org.lineageos.updater.misc.Constants;
 import org.lineageos.updater.misc.Utils;
 import org.lineageos.updater.util.SystemUpdateInfoPublisher;
 
@@ -25,10 +28,14 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class UpdaterController {
 
@@ -51,6 +58,8 @@ public class UpdaterController {
     private final PowerManager.WakeLock mWakeLock;
 
     private final File mDownloadRoot;
+
+    private static final String PREF_PENDING_FULL_ID = "pending_full_install_id";
 
     private int mActiveDownloads = 0;
     private final Set<String> mVerifyingUpdates = new HashSet<>();
@@ -277,8 +286,19 @@ public class UpdaterController {
                         entry.mUpdate = entry.mUpdate.withStatus(UpdateStatus.VERIFIED);
                     }
                     mUpdatesLocalDataSource.changeStatus(downloadId, UpdateStatus.VERIFIED);
+                    String pendingFullId = PreferenceManager.getDefaultSharedPreferences(mContext)
+                            .getString(PREF_PENDING_FULL_ID, null);
+                    if (downloadId.equals(pendingFullId)) {
+                        PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+                                .remove(PREF_PENDING_FULL_ID).apply();
+                        ABUpdateInstaller.getInstance(mContext, this,
+                                ((UpdaterApplication) mContext).getUserPreferencesRepository())
+                                .install(downloadId);
+                    }
                 } else {
-                    mUpdatesLocalDataSource.removeUpdate(downloadId);
+                    if (!fallbackIncrementalToFull(downloadId)) {
+                        mUpdatesLocalDataSource.removeUpdate(downloadId);
+                    }
                     synchronized (entry) {
                         entry.mUpdate = entry.mUpdate.toBuilder()
                                 .setProgress(0)
@@ -553,6 +573,11 @@ public class UpdaterController {
         if (entry == null) {
             return;
         }
+        if (downloadId.equals(PreferenceManager.getDefaultSharedPreferences(mContext)
+                .getString(PREF_PENDING_FULL_ID, null))) {
+            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+                    .remove(PREF_PENDING_FULL_ID).apply();
+        }
         // Pause the download if it's active
         if (isDownloading(downloadId)) {
             entry.mDownloadClient.cancel();
@@ -591,6 +616,85 @@ public class UpdaterController {
     public Update getUpdate(String downloadId) {
         DownloadEntry entry = mDownloads.get(downloadId);
         return entry != null ? entry.mUpdate : null;
+    }
+
+    private JSONObject getIncrementalLinks() {
+        String raw = PreferenceManager.getDefaultSharedPreferences(mContext)
+                .getString(Constants.PREF_INCREMENTAL_LINKS, "{}");
+        try {
+            return new JSONObject(raw);
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    public Update getIncrementalForFull(String fullDownloadId) {
+        String deltaUrl = getIncrementalLinks().optString(fullDownloadId, null);
+        if (deltaUrl == null) {
+            return null;
+        }
+        for (DownloadEntry entry : mDownloads.values()) {
+            if (deltaUrl.equals(entry.mUpdate.getDownloadUrl())) {
+                return entry.mUpdate;
+            }
+        }
+        return null;
+    }
+
+    public Update getFullFallback(String downloadId) {
+        DownloadEntry failed = mDownloads.get(downloadId);
+        if (failed == null || failed.mUpdate.getDownloadUrl() == null) {
+            return null;
+        }
+        String deltaUrl = failed.mUpdate.getDownloadUrl();
+        JSONObject links = getIncrementalLinks();
+        Iterator<String> fullIds = links.keys();
+        while (fullIds.hasNext()) {
+            String fullId = fullIds.next();
+            if (deltaUrl.equals(links.optString(fullId, null))) {
+                DownloadEntry full = mDownloads.get(fullId);
+                if (full != null && full.mUpdate.isAvailableOnline()) {
+                    return full.mUpdate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isDeltaUsable(Update delta) {
+        UpdateStatus status = delta.getStatus();
+        return status != UpdateStatus.INSTALLATION_FAILED
+                && status != UpdateStatus.VERIFICATION_FAILED
+                && status != UpdateStatus.INSTALLATION_CANCELLED
+                && status != UpdateStatus.DELETED;
+    }
+
+    public String getDisplayUpdateId() {
+        for (DownloadEntry entry : mDownloads.values()) {
+            Update delta = getIncrementalForFull(entry.mUpdate.getDownloadId());
+            if (delta != null && isDeltaUsable(delta)) {
+                return delta.getDownloadId();
+            }
+        }
+        return null;
+    }
+
+    public boolean fallbackIncrementalToFull(String failedIncrementalId) {
+        Update full = getFullFallback(failedIncrementalId);
+        if (full == null) {
+            return false;
+        }
+        String fullId = full.getDownloadId();
+        if (full.hasVerifiedPackage()) {
+            ABUpdateInstaller.getInstance(mContext, this,
+                    ((UpdaterApplication) mContext).getUserPreferencesRepository())
+                    .install(fullId);
+        } else {
+            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+                    .putString(PREF_PENDING_FULL_ID, fullId).apply();
+            startDownload(fullId);
+        }
+        return true;
     }
 
     public void setUpdate(String downloadId, Update update) {

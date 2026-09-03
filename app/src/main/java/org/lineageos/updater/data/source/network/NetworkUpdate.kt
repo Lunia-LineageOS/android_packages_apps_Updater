@@ -24,6 +24,7 @@ data class NetworkUpdate(
     // @SerialName("date") val date: String,
     @SerialName("datetime") val datetime: Long,
     @SerialName("files") val files: List<NetworkUpdateFile>,
+    @SerialName("incremental") val incremental: List<NetworkUpdateFile>? = null,
     @SerialName("type") val type: String,
     @SerialName("version") val version: String,
 )
@@ -60,8 +61,7 @@ private fun String.parsePackageFileRanges() =
         )
     }
 
-fun NetworkUpdate.toUpdate(): Update {
-    val file = files[0]
+private fun NetworkUpdate.toUpdate(file: NetworkUpdateFile): Update {
     val packageFileRanges = file.otaPropertyFiles?.parsePackageFileRanges().orEmpty()
     val payloadMetadataRange = packageFileRanges[Constants.AB_PAYLOAD_METADATA_PATH]
     val payloadRange = packageFileRanges[Constants.AB_PAYLOAD_BIN_PATH]
@@ -85,4 +85,11 @@ fun NetworkUpdate.toUpdate(): Update {
         payloadPropertiesSize = payloadPropertiesRange?.size,
         isAvailableOnline = true,
     )
+}
+
+fun NetworkUpdate.toUpdate(): Update = toUpdate(files[0])
+
+fun NetworkUpdate.toIncrementalUpdate(): Update? {
+    val file = incremental?.firstOrNull() ?: return null
+    return toUpdate(file)
 }
