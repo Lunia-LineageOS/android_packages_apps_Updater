@@ -46,6 +46,27 @@ The `files[0].url` attribute is the URL of the file to be downloaded.
 The `type` attribute is the string to be compared with the `ro.lineage.releasetype` property.  
 The `version` attribute is the string to be compared with the `ro.lineage.build.version` property.  
 
+A release may carry a paired incremental. The full entry then also has an
+`incremental` array with exactly one file, in the same shape as `files[0]`:
+
+```json
+"incremental": [
+  {
+    "filename": "lineage-23.2-20260619-to-20260703-nightly-device-signed.zip",
+    "os_patch_level": "2026-07-01",
+    "os_sdk_level": 36,
+    "ota_property_files": "payload_metadata.bin:4662:187245,payload.bin:4662:214743512,payload_properties.txt:214748211:156,metadata:69:683,metadata.pb:820:1352",
+    "sha256": "6d2f6b0e8a2f1d0f6b3b2f9e8d7c6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f",
+    "size": 214748364,
+    "url": "https://downloads.example.org/device/lineage-23.2-20260619-to-20260703-nightly-device-signed.zip"
+  }
+]
+```
+
+The app attempts the delta first on A/B devices and automatically falls back
+to the paired full entry when verification or installation fails;
+update_engine itself rejects wrong-source deltas.
+
 Additional attributes are ignored.
 
 
