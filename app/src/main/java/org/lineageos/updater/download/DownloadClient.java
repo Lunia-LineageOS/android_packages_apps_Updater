@@ -15,6 +15,11 @@ public interface DownloadClient {
         void onSuccess();
 
         void onFailure(boolean cancelled);
+
+        /** Called instead of onFailure() when the server refused the download. */
+        default void onFailure(boolean cancelled, int responseCode) {
+            onFailure(cancelled);
+        }
     }
 
     interface ProgressListener {
