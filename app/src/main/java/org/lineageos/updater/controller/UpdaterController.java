@@ -7,6 +7,7 @@ package org.lineageos.updater.controller;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -59,7 +60,7 @@ public class UpdaterController {
 
     private final File mDownloadRoot;
 
-    private static final String PREF_PENDING_FULL_ID = "pending_full_install_id";
+    private static final String PREF_FAILED_INCREMENTAL_IDS = "failed_incremental_ids";
 
     private int mActiveDownloads = 0;
     private final Set<String> mVerifyingUpdates = new HashSet<>();
@@ -286,19 +287,8 @@ public class UpdaterController {
                         entry.mUpdate = entry.mUpdate.withStatus(UpdateStatus.VERIFIED);
                     }
                     mUpdatesLocalDataSource.changeStatus(downloadId, UpdateStatus.VERIFIED);
-                    String pendingFullId = PreferenceManager.getDefaultSharedPreferences(mContext)
-                            .getString(PREF_PENDING_FULL_ID, null);
-                    if (downloadId.equals(pendingFullId)) {
-                        PreferenceManager.getDefaultSharedPreferences(mContext).edit()
-                                .remove(PREF_PENDING_FULL_ID).apply();
-                        ABUpdateInstaller.getInstance(mContext, this,
-                                ((UpdaterApplication) mContext).getUserPreferencesRepository())
-                                .install(downloadId);
-                    }
-                } else {
-                    if (!fallbackIncrementalToFull(downloadId)) {
-                        mUpdatesLocalDataSource.removeUpdate(downloadId);
-                    }
+                } else if (!markIncrementalFailed(downloadId, UpdateStatus.VERIFICATION_FAILED)) {
+                    mUpdatesLocalDataSource.removeUpdate(downloadId);
                     synchronized (entry) {
                         entry.mUpdate = entry.mUpdate.toBuilder()
                                 .setProgress(0)
@@ -573,11 +563,6 @@ public class UpdaterController {
         if (entry == null) {
             return;
         }
-        if (downloadId.equals(PreferenceManager.getDefaultSharedPreferences(mContext)
-                .getString(PREF_PENDING_FULL_ID, null))) {
-            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
-                    .remove(PREF_PENDING_FULL_ID).apply();
-        }
         // Pause the download if it's active
         if (isDownloading(downloadId)) {
             entry.mDownloadClient.cancel();
@@ -661,39 +646,67 @@ public class UpdaterController {
         return null;
     }
 
-    private static boolean isDeltaUsable(Update delta) {
+    private boolean isDeltaUsable(Update delta) {
         UpdateStatus status = delta.getStatus();
         return status != UpdateStatus.INSTALLATION_FAILED
                 && status != UpdateStatus.VERIFICATION_FAILED
                 && status != UpdateStatus.INSTALLATION_CANCELLED
-                && status != UpdateStatus.DELETED;
+                && status != UpdateStatus.DELETED
+                && !PreferenceManager.getDefaultSharedPreferences(mContext)
+                        .getStringSet(PREF_FAILED_INCREMENTAL_IDS, Set.of())
+                        .contains(delta.getDownloadId());
     }
 
     public String getDisplayUpdateId() {
+        String spentIncrementalFullId = null;
         for (DownloadEntry entry : mDownloads.values()) {
             Update delta = getIncrementalForFull(entry.mUpdate.getDownloadId());
-            if (delta != null && isDeltaUsable(delta)) {
+            if (delta == null) {
+                continue;
+            }
+            if (isDeltaUsable(delta)) {
                 return delta.getDownloadId();
             }
+            spentIncrementalFullId = entry.mUpdate.getDownloadId();
         }
-        return null;
+        return spentIncrementalFullId;
     }
 
-    public boolean fallbackIncrementalToFull(String failedIncrementalId) {
-        Update full = getFullFallback(failedIncrementalId);
-        if (full == null) {
+    void markInstallationFailed(String downloadId) {
+        if (markIncrementalFailed(downloadId, UpdateStatus.INSTALLATION_FAILED)) {
+            return;
+        }
+        setUpdate(downloadId, getUpdate(downloadId).toBuilder()
+                .setInstallProgress(0)
+                .setStatus(UpdateStatus.INSTALLATION_FAILED)
+                .build());
+    }
+
+    /** Marks a failed incremental so its full package is shown. Returns false for other updates. */
+    boolean markIncrementalFailed(String downloadId, UpdateStatus status) {
+        if (getFullFallback(downloadId) == null) {
             return false;
         }
-        String fullId = full.getDownloadId();
-        if (full.hasVerifiedPackage()) {
-            ABUpdateInstaller.getInstance(mContext, this,
-                    ((UpdaterApplication) mContext).getUserPreferencesRepository())
-                    .install(fullId);
-        } else {
-            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
-                    .putString(PREF_PENDING_FULL_ID, fullId).apply();
-            startDownload(fullId);
-        }
+        Update failed = getUpdate(downloadId).toBuilder()
+                .setProgress(0)
+                .setInstallProgress(0)
+                .setStatus(status)
+                .build();
+        setUpdate(downloadId, failed);
+
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(mContext);
+        Set<String> failedIds = new HashSet<>(
+                preferences.getStringSet(PREF_FAILED_INCREMENTAL_IDS, Set.of()));
+        failedIds.add(downloadId);
+        preferences.edit().putStringSet(PREF_FAILED_INCREMENTAL_IDS, failedIds).apply();
+        new Thread(() -> {
+            File file = failed.getFile();
+            if (file != null) {
+                //noinspection ResultOfMethodCallIgnored
+                file.delete();
+            }
+            mUpdatesLocalDataSource.changeStatus(downloadId, UpdateStatus.DELETED);
+        }).start();
         return true;
     }
 
