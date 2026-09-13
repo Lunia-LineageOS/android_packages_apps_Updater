@@ -281,17 +281,17 @@ public class HttpURLConnectionClient implements DownloadClient {
                     responseCode = mClient.getResponseCode();
                 }
 
-                mCallback.onResponse(new Headers());
-
                 if (mResume && isPartialContentCode(responseCode)) {
                     justResumed = true;
                     mTotalBytesRead = mDestination.length();
                     Log.d(TAG, "The server fulfilled the partial content request");
                 } else if (mResume || !isSuccessCode(responseCode)) {
                     Log.e(TAG, "The server replied with code " + responseCode);
-                    mCallback.onFailure(isInterrupted());
+                    mCallback.onFailure(isInterrupted(), responseCode);
                     return;
                 }
+
+                mCallback.onResponse(new Headers());
 
                 try (
                         InputStream inputStream = mClient.getInputStream();
