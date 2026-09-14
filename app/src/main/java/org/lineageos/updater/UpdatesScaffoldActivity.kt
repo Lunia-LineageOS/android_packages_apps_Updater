@@ -181,9 +181,16 @@ private fun UpdatesScaffoldContent(
             updateItems.firstOrNull { it.downloadId == id }
         } ?: updateItems.firstOrNull()
 
+    // Incrementals that failed; their full package is shown instead.
+    val failedIncrementals = liveUpdates.filter {
+        (it.status == UpdateStatus.INSTALLATION_FAILED ||
+                it.status == UpdateStatus.VERIFICATION_FAILED) &&
+                updaterController?.getFullFallback(it.downloadId) != null
+    }
+
     SystemUpdateScreen(
         headline = getHeadline(
-            updates = liveUpdates,
+            updates = liveUpdates - failedIncrementals,
             displayedCheckState = checkUiState.displayedState,
             isPreparing = isPreparing,
             hasUpdateItems = updateItems.isNotEmpty(),
