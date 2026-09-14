@@ -25,6 +25,7 @@ object Constants {
     const val AB_PAYLOAD_METADATA_PATH = "payload_metadata.bin"
     const val AB_PAYLOAD_BIN_PATH = "payload.bin"
     const val AB_PAYLOAD_PROPERTIES_PATH = "payload_properties.txt"
+    const val OTA_METADATA_PB_PATH = "metadata.pb"
 
     /**
      * Miscellaneous - Legacy
