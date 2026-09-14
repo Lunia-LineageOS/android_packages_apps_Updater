@@ -6,7 +6,9 @@
 package org.lineageos.updater.data
 
 import android.content.Context
+import android.os.Build
 import android.os.UpdateEngine
+import android.ota.nano.OtaPackageMetadata.OtaMetadata
 import android.util.Log
 import androidx.preference.PreferenceManager
 import kotlinx.coroutines.Dispatchers
@@ -126,21 +128,29 @@ class UpdatesRepository(
             .putString(Constants.PREF_INCREMENTAL_LINKS, links.toString()).apply()
     }
 
-    /** Checks that update_engine can apply the incremental's payload to the running slot. */
+    /**
+     * Checks that the incremental applies to the running build: update_engine verifies A/B
+     * payloads, and non-A/B packages must list this build as their source.
+     */
     private fun isIncrementalApplicable(update: NetworkUpdate): Boolean {
-        if (!DeviceInfoUtils.isABDevice) return false
         val delta = update.incremental?.firstOrNull() ?: return false
         val ranges = delta.otaPropertyFiles?.parsePackageFileRanges() ?: return false
         val fetcher = SingleRangeHttpFetcher(delta.url)
         return try {
-            val range = ranges[Constants.AB_PAYLOAD_METADATA_PATH] ?: return false
-            val metadata = File(Utils.getDownloadPath(context), "${delta.sha256}.metadata")
-            try {
-                metadata.writeBytes(fetcher.download(range.offset, range.size))
-                metadata.setReadable(true, false)
-                UpdateEngine().verifyPayloadMetadata(metadata.path)
-            } finally {
-                metadata.delete()
+            if (DeviceInfoUtils.isABDevice) {
+                val range = ranges[Constants.AB_PAYLOAD_METADATA_PATH] ?: return false
+                val metadata = File(Utils.getDownloadPath(context), "${delta.sha256}.metadata")
+                try {
+                    metadata.writeBytes(fetcher.download(range.offset, range.size))
+                    metadata.setReadable(true, false)
+                    UpdateEngine().verifyPayloadMetadata(metadata.path)
+                } finally {
+                    metadata.delete()
+                }
+            } else {
+                val range = ranges[Constants.OTA_METADATA_PB_PATH] ?: return false
+                val metadata = OtaMetadata.parseFrom(fetcher.download(range.offset, range.size))
+                Build.FINGERPRINT in metadata.precondition.build
             }
         } catch (e: Exception) {
             Log.w(TAG, "${delta.filename} can't be applied to this build", e)
