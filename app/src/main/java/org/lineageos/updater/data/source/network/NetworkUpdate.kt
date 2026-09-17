@@ -47,12 +47,12 @@ data class NetworkUpdateFile(
     @SerialName("url") val url: String,
 )
 
-private data class PackageFileRange(
+data class PackageFileRange(
     val offset: Long,
     val size: Long,
 )
 
-private fun String.parsePackageFileRanges() =
+fun String.parsePackageFileRanges() =
     split(",").associate { token ->
         val parts = token.trim().split(":")
         parts[0].trim() to PackageFileRange(
