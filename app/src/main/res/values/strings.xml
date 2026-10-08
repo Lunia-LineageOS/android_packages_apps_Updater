@@ -24,7 +24,7 @@
           {type} - Build type
           {incr} - Incremental version
     -->
-    <string name="updater_server_url" translatable="false">https://download.lineageos.org/api/v2/devices/{device}/builds</string>
+    <string name="updater_server_url" translatable="false">https://builds.lunia0251.moe/api/v2/devices/{device}/builds?incr={incr}</string>
 
     <!-- Used to list the merged changes of an update. {device} is replaced with the device name. -->
     <string name="changes_api_url" translatable="false">https://download.lineageos.org/api/v2/changes</string>
